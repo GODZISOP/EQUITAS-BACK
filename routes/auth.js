@@ -23,11 +23,13 @@ router.post('/signup', async (req, res) => {
       cardExpiry,
       cardType, // 'visa' or 'mastercard'
       upiNumber,
+      ckycNumber, // CKYC Number (14-digit unique identifier)
     } = req.body;
 
     console.log('=== SIGNUP ATTEMPT ===');
     console.log('Email:', email);
     console.log('Full Name:', fullName);
+    console.log('CKYC Number:', ckycNumber);
 
     // Validate required fields
     if (!email || !password) {
@@ -66,6 +68,11 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ message: 'Card type must be Visa or Mastercard' });
     }
 
+    // Validate CKYC Number (14 digits)
+    if (ckycNumber && (ckycNumber.length !== 14 || !/^\d{14}$/.test(ckycNumber))) {
+      return res.status(400).json({ message: 'CKYC number must be 14 digits' });
+    }
+
     // Normalize inputs
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
@@ -99,6 +106,14 @@ router.post('/signup', async (req, res) => {
       }
     }
 
+    // Check if CKYC number already exists (if provided)
+    if (ckycNumber) {
+      const existingCKYC = await User.findOne({ ckycNumber: ckycNumber.trim() });
+      if (existingCKYC) {
+        return res.status(400).json({ message: 'CKYC number already registered' });
+      }
+    }
+
     // Hash password and PIN
     const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
     const hashedPinCode = await bcrypt.hash(pinCode, 10);
@@ -116,6 +131,7 @@ router.post('/signup', async (req, res) => {
       cardExpiry: cardExpiry.trim(),
       cardType: normalizedCardType,
       upiNumber: upiNumber ? upiNumber.trim() : '',
+      ckycNumber: ckycNumber ? ckycNumber.trim() : '',
     });
 
     await newUser.save();
@@ -130,6 +146,7 @@ router.post('/signup', async (req, res) => {
         phoneNumber: newUser.phoneNumber,
         accountNumber: newUser.accountNumber,
         cardType: newUser.cardType,
+        ckycNumber: newUser.ckycNumber,
       },
     });
   } catch (err) {
@@ -178,6 +195,7 @@ router.post('/login', async (req, res) => {
         cardExpiry: user.cardExpiry,
         cardType: user.cardType,
         upiNumber: user.upiNumber,
+        ckycNumber: user.ckycNumber,
         balance: user.balance || 0,
         createdAt: user.createdAt,
       }
@@ -242,6 +260,7 @@ router.post('/login-pin', async (req, res) => {
         cardExpiry: matchedUser.cardExpiry,
         cardType: matchedUser.cardType,
         upiNumber: matchedUser.upiNumber,
+        ckycNumber: matchedUser.ckycNumber,
         balance: matchedUser.balance || 0,
         createdAt: matchedUser.createdAt,
       }
@@ -309,6 +328,7 @@ router.get('/me/:userId', async (req, res) => {
       cardExpiry: user.cardExpiry,
       cardType: user.cardType,
       upiNumber: user.upiNumber,
+      ckycNumber: user.ckycNumber,
       balance: user.balance,
     });
   } catch (error) {

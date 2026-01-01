@@ -105,6 +105,19 @@ const userSchema = new mongoose.Schema(
       sparse: true, // Allows multiple null values
       trim: true,
     },
+    ckycNumber: {
+      type: String,
+      unique: true,
+      sparse: true, // Allows multiple null values
+      trim: true,
+      validate: {
+        validator: function(v) {
+          // If ckycNumber is provided, it must be 14 digits
+          return !v || /^\d{14}$/.test(v);
+        },
+        message: 'CKYC number must be 14 digits'
+      }
+    },
     balance: { 
       type: Number, 
       default: 0 
