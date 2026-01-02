@@ -714,4 +714,121 @@ setInterval(() => {
   }
 }, 60000);
 
+
+
+router.post('/deduct-balance', async (req, res) => {
+  console.log('💸 POST /api/user/deduct-balance called');
+  
+  let session = null;
+  
+  try {
+    const { 
+      userId, 
+      amount, 
+      transactionType,
+      transactionId,
+      toUPI,
+      fromUPI 
+    } = req.body;
+    
+    const amountNum = Number(amount);
+
+    console.log('Deduct balance request:', {
+      userId,
+      amount: amountNum,
+      type: transactionType,
+      txnId: transactionId
+    });
+
+    // Validation
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'User ID is required' 
+      });
+    }
+
+    if (!amountNum || amountNum <= 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid amount' 
+      });
+    }
+
+    if (!transactionId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Transaction ID is required' 
+      });
+    }
+
+    // Start transaction
+    session = await mongoose.startSession();
+    session.startTransaction();
+
+    const user = await User.findById(userId).session(session);
+    
+    if (!user) {
+      await session.abortTransaction();
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+
+    // Check sufficient balance
+    if ((user.balance || 0) < amountNum) {
+      await session.abortTransaction();
+      return res.status(400).json({ 
+        success: false,
+        message: 'Insufficient balance',
+        currentBalance: user.balance || 0,
+        required: amountNum
+      });
+    }
+
+    // Deduct balance
+    user.balance = (user.balance || 0) - amountNum;
+
+    // Add transaction to user's history
+    user.transactions = user.transactions || [];
+    user.transactions.push({
+      type: 'upi_transfer',
+      amount: -amountNum,
+      transactionId: transactionId,
+      toUPI: toUPI,
+      fromUPI: fromUPI,
+      status: 'completed',
+      notes: `UPI transfer to ${toUPI}`,
+      createdAt: new Date()
+    });
+
+    await user.save({ session });
+    await session.commitTransaction();
+
+    console.log(`✅ Balance deducted: ₹${amountNum}. New balance: ₹${user.balance}`);
+
+    res.json({
+      success: true,
+      message: 'Balance deducted successfully',
+      newBalance: user.balance,
+      transactionId: transactionId
+    });
+
+  } catch (error) {
+    if (session) {
+      await session.abortTransaction();
+    }
+    console.error('❌ Deduct balance error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error', 
+      error: error.message 
+    });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
+  }
+});
 export default router;
