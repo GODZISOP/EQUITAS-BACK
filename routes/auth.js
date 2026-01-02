@@ -335,5 +335,56 @@ router.get('/me/:userId', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+router.post('/verify-upi', async (req, res) => {
+  try {
+    const { upiNumber, phoneNumber } = req.body;
+
+    if (!upiNumber && !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide UPI number or phone number'
+      });
+    }
+
+    let user;
+
+    // Search by UPI number
+    if (upiNumber) {
+      user = await User.findOne({ upiNumber: upiNumber }).select('fullName upiNumber phoneNumber accountNumber');
+    } 
+    // Search by phone number
+    else if (phoneNumber) {
+      user = await User.findOne({ phoneNumber: phoneNumber }).select('fullName upiNumber phoneNumber accountNumber');
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'UPI ID or Phone number not found'
+      });
+    }
+
+    // Return user details (excluding sensitive info)
+    return res.status(200).json({
+      success: true,
+      user: {
+        fullName: user.fullName,
+        upiNumber: user.upiNumber,
+        phoneNumber: user.phoneNumber,
+        accountNumber: user.accountNumber
+      },
+      message: 'UPI verified successfully'
+    });
+
+  } catch (error) {
+    console.error('UPI verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during verification'
+    });
+  }
+});
+
+export default router;
 
 export default router;
