@@ -384,6 +384,61 @@ router.post('/verify-upi', async (req, res) => {
     });
   }
 });
+router.post('/verify-pin', async (req, res) => {
+  try {
+    const { userId, pinCode } = req.body;
+
+    console.log('=== PIN VERIFICATION ATTEMPT ===');
+    console.log('User ID:', userId);
+
+    if (!userId || !pinCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID and PIN are required'
+      });
+    }
+
+    if (pinCode.length !== 4 || !/^\d{4}$/.test(pinCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'PIN must be 4 digits'
+      });
+    }
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify PIN
+    const isPinMatch = await bcrypt.compare(pinCode, user.pinCode);
+    
+    if (!isPinMatch) {
+      console.log('❌ Invalid PIN for user:', user.email);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid PIN'
+      });
+    }
+
+    console.log('✅ PIN verified for user:', user.email);
+    return res.status(200).json({
+      success: true,
+      message: 'PIN verified successfully'
+    });
+
+  } catch (error) {
+    console.error('PIN verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during PIN verification'
+    });
+  }
+});
 
 
 export default router;
