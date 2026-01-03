@@ -198,6 +198,7 @@ router.get('/balance', authMiddleware, async (req, res) => {
 });
 
 // ✅ Generate OTP for transaction
+// ✅ Generate OTP for transaction
 router.post('/generate-otp', async (req, res) => {
   console.log('🔐 POST /api/add/generate-otp called');
   console.log('Request body:', req.body);
@@ -230,7 +231,7 @@ router.post('/generate-otp', async (req, res) => {
     console.log(`🔐 OTP Generated: ${otp}`);
     console.log(`   User: ${user.email || 'No email'}`);
     console.log(`   Transaction: ${transactionType}`);
-    console.log(`   Amount: د.إ${amount}`);
+    console.log(`   Amount: ₹${amount}`);
 
     // Try to send email (optional - won't fail if email is not configured)
     let emailSent = false;
@@ -238,16 +239,16 @@ router.post('/generate-otp', async (req, res) => {
       emailSent = await sendOTPEmail(user.email, otp, transactionType, amount);
     }
 
-    // Always return success
+    // ✅ FIXED: Don't send OTP in production
     res.json({
       success: true,
       message: emailSent 
         ? `OTP sent to ${user.email.substring(0, 3)}***` 
-        : 'OTP generated (check console)',
+        : 'OTP generated successfully',
       otpKey,
       email: user.email ? user.email.substring(0, 3) + '***' : undefined,
-      // Show OTP in response for testing
-      otp: otp, // Always show OTP for testing
+      // ❌ REMOVE THIS LINE - Don't send OTP to frontend
+      // otp: otp, 
       expiresIn: 300
     });
 
