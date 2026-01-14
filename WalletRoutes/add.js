@@ -174,6 +174,52 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+// 🔧 ONE-TIME DATABASE FIX ENDPOINT - Fix invalid 'international' transaction types
+router.post('/fix-invalid-transactions', async (req, res) => {
+  try {
+    console.log('🔧 Starting database migration to fix invalid transaction types...');
+    
+    const result = await mongoose.connection.db.collection('users').updateMany(
+      { 'transactions.type': 'international' },
+      { 
+        $set: { 
+          'transactions.$[elem].type': 'transfer'
+        } 
+      },
+      { 
+        arrayFilters: [{ 'elem.type': 'international' }]
+      }
+    );
+
+    console.log(`✅ Migration complete!`);
+    console.log(`   Matched: ${result.matchedCount} users`);
+    console.log(`   Modified: ${result.modifiedCount} users`);
+
+    // Verify the fix
+    const remaining = await mongoose.connection.db.collection('users').countDocuments({
+      'transactions.type': 'international'
+    });
+
+    res.json({
+      success: true,
+      message: 'Database migration completed successfully',
+      stats: {
+        usersMatched: result.matchedCount,
+        usersModified: result.modifiedCount,
+        remainingInvalid: remaining
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Migration failed', 
+      error: error.message 
+    });
+  }
+});
+
 // Get user balance (with auth)
 router.get('/balance', authMiddleware, async (req, res) => {
   console.log('📊 GET /api/add/balance called');
@@ -376,7 +422,6 @@ router.post('/add-funds', async (req, res) => {
       type: 'add_funds',
       amount: amountNum,
       status: 'completed',
-      transferMode: 'DEPOSIT', // ✅ Added
       notes: 'Funds added to account',
       createdAt: new Date()
     });
@@ -405,7 +450,7 @@ router.post('/add-funds', async (req, res) => {
   }
 });
 
-// ✅ TRANSFER WITH IMPS/NEFT SUPPORT
+// ✅ TRANSFER WITH IMPS/NEFT/SWIFT SUPPORT
 router.post('/transfer', async (req, res) => {
   let session = null;
   
@@ -414,7 +459,7 @@ router.post('/transfer', async (req, res) => {
       fromUserId, 
       toAccountNumber, 
       amount,
-      transferMode = 'IMPS', // IMPS or NEFT
+      transferMode = 'IMPS',
       recipientName,
       swiftCode,
       ibanNumber,
@@ -437,7 +482,7 @@ router.post('/transfer', async (req, res) => {
     if (!fromUserId || !toAccountNumber || !amountNum) {
       return res.status(400).json({ 
         success: false,
-        message: 'All fields are requireds' 
+        message: 'All fields are required' 
       });
     }
 
@@ -625,12 +670,10 @@ router.post('/transfer', async (req, res) => {
         amount: -amountNum,
         recipientName,
         recipientAccount: toAccountNumber,
-        swiftCode,
-        ibanNumber: ibanNumber || null,
         transferMode: 'SWIFT',
         status: 'pending',
         estimatedCompletion,
-        notes: 'International transfer processing',
+        notes: `International transfer to ${recipientName} via SWIFT code ${swiftCode}`,
         createdAt: new Date()
       });
 
@@ -677,6 +720,7 @@ router.post('/transfer', async (req, res) => {
     }
   }
 });
+
 // Get transaction history
 router.get('/transactions', authMiddleware, async (req, res) => {
   console.log('📜 GET /api/add/transactions called');
@@ -704,7 +748,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 
 // ✅ UPI DEDUCT BALANCE
 router.post('/deduct-balance', async (req, res) => {
-  console.log('💸 POST /api/user/deduct-balance called');
+  console.log('💸 POST /api/add/deduct-balance called');
   
   let session = null;
   
@@ -777,10 +821,9 @@ router.post('/deduct-balance', async (req, res) => {
     user.transactions.push({
       type: 'upi_transfer',
       amount: -amountNum,
-      transactionId: transactionId,
-      toUPI: toUPI,
-      fromUPI: fromUPI,
-      transferMode: 'UPI', // ✅ Added
+      recipientUPI: toUPI,
+      senderUPI: fromUPI,
+      transferMode: 'UPI',
       status: 'completed',
       notes: `UPI transfer to ${toUPI}`,
       createdAt: new Date()
@@ -815,7 +858,7 @@ router.post('/deduct-balance', async (req, res) => {
   }
 });
 
-// Clean up expired OTPs
+// Clean up expired OTPs every minute
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of otpStore.entries()) {
