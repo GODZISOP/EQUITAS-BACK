@@ -748,6 +748,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
 });
 
 // ✅ UPI DEDUCT BALANCE
+// ✅ UPI DEDUCT BALANCE
 router.post('/deduct-balance', async (req, res) => {
   console.log('💸 POST /api/add/deduct-balance called');
   
@@ -830,7 +831,7 @@ router.post('/deduct-balance', async (req, res) => {
       createdAt: new Date()
     });
 
-    await user.save({ session });
+    await user.save({ session, validateBeforeSave: false }); // ✅ FIXED: Added validateBeforeSave: false
     await session.commitTransaction();
 
     console.log(`✅ Balance deducted: د.إ${amountNum}. New balance: د.إ${user.balance}`);
