@@ -814,7 +814,55 @@ router.post('/deduct-balance', async (req, res) => {
     }
   }
 });
+const fixInternationalTransactions = async () => {
+  try {
+    // Connect to database
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Connected to database');
+    
+    // Find all users with international transactions
+    const usersWithInternational = await User.find({ 
+      'transactions.type': 'international' 
+    });
+    
+    console.log(`📊 Found ${usersWithInternational.length} users with international transactions`);
+    
+    // Update each user
+    let fixedCount = 0;
+    for (const user of usersWithInternational) {
+      // Update all international transactions to 'transfer'
+      user.transactions.forEach(txn => {
+        if (txn.type === 'international') {
+          txn.type = 'transfer';
+          console.log(`   Fixed transaction for user ${user.email || user._id}`);
+        }
+      });
+      
+      // Save without validation to bypass schema check
+      await user.save({ validateBeforeSave: false });
+      fixedCount++;
+    }
+    
+    console.log(`✅ Fixed ${fixedCount} users`);
+    
+    // Verify the fix
+    const remaining = await User.countDocuments({ 
+      'transactions.type': 'international' 
+    });
+    console.log(`📊 Remaining users with 'international' type: ${remaining}`);
+    
+    if (remaining === 0) {
+      console.log('🎉 All international transactions have been fixed!');
+    }
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error fixing transactions:', error);
+    process.exit(1);
+  }
+};
 
+fixInternationalTransactions();s
 // Clean up expired OTPs
 setInterval(() => {
   const now = Date.now();
