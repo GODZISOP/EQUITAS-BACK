@@ -414,8 +414,7 @@ router.post('/transfer', async (req, res) => {
       fromUserId, 
       toAccountNumber, 
       amount,
-      transferType = 'local',
-      transferMode = 'IMPS', // ✅ NEW: IMPS or NEFT
+      transferMode = 'IMPS', // IMPS or NEFT
       recipientName,
       swiftCode,
       ibanNumber,
@@ -426,8 +425,7 @@ router.post('/transfer', async (req, res) => {
     const amountNum = Number(amount);
 
     console.log('💸 Transfer request:', {
-      type: transferType,
-      mode: transferMode, // ✅ Log transfer mode
+      mode: transferMode,
       from: fromUserId,
       to: toAccountNumber,
       amount: amountNum,
@@ -461,6 +459,14 @@ router.post('/transfer', async (req, res) => {
       return res.status(400).json({ 
         success: false,
         message: 'Amount must be greater than 0' 
+      });
+    }
+
+    // Validate transfer mode
+    if (!['IMPS', 'NEFT', 'SWIFT'].includes(transferMode)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid transfer mode' 
       });
     }
 
@@ -504,7 +510,8 @@ router.post('/transfer', async (req, res) => {
     console.log('✅ OTP verified successfully');
     otpStore.delete(otpKey);
 
-    if (transferType === 'international' && !swiftCode?.trim()) {
+    // SWIFT code required for international transfers
+    if (transferMode === 'SWIFT' && !swiftCode?.trim()) {
       return res.status(400).json({ 
         success: false,
         message: 'SWIFT code is required for international transfers' 
@@ -533,8 +540,8 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
-    // ✅ LOCAL TRANSFER WITH IMPS/NEFT
-    if (transferType === 'local') {
+    // IMPS or NEFT Transfer (domestic)
+    if (transferMode === 'IMPS' || transferMode === 'NEFT') {
       const recipient = await User.findOne({ accountNumber: toAccountNumber }).session(session);
       
       if (!recipient) {
@@ -553,27 +560,32 @@ router.post('/transfer', async (req, res) => {
         });
       }
 
+      // Deduct from sender
       sender.balance = (sender.balance || 0) - amountNum;
+
+      // Add to recipient
       recipient.balance = (recipient.balance || 0) + amountNum;
 
+      // Add sender transaction
       sender.transactions = sender.transactions || [];
       sender.transactions.push({
-        type: 'local',
+        type: 'transfer',
         amount: -amountNum,
         recipientName,
         recipientAccount: toAccountNumber,
-        transferMode: transferMode, // ✅ Save IMPS or NEFT
+        transferMode: transferMode,
         status: 'completed',
         createdAt: new Date()
       });
 
+      // Add recipient transaction
       recipient.transactions = recipient.transactions || [];
       recipient.transactions.push({
         type: 'received',
         amount: amountNum,
         senderName: sender.email,
         senderAccount: sender.accountNumber,
-        transferMode: transferMode, // ✅ Save IMPS or NEFT
+        transferMode: transferMode,
         status: 'completed',
         createdAt: new Date()
       });
@@ -587,8 +599,7 @@ router.post('/transfer', async (req, res) => {
       return res.json({
         success: true,
         message: 'Transfer successful',
-        transferType: 'local',
-        transferMode: transferMode, // ✅ Return transfer mode
+        transferMode: transferMode,
         senderBalance: sender.balance,
         transactionDetails: {
           from: sender.accountNumber,
@@ -601,8 +612,8 @@ router.post('/transfer', async (req, res) => {
         }
       });
 
-    } else {
-      // ✅ INTERNATIONAL TRANSFER
+    } else if (transferMode === 'SWIFT') {
+      // SWIFT Transfer (international)
       const estimatedCompletion = new Date();
       estimatedCompletion.setDate(estimatedCompletion.getDate() + 2);
 
@@ -610,13 +621,13 @@ router.post('/transfer', async (req, res) => {
 
       sender.transactions = sender.transactions || [];
       sender.transactions.push({
-        type: 'international',
+        type: 'transfer',
         amount: -amountNum,
         recipientName,
         recipientAccount: toAccountNumber,
         swiftCode,
         ibanNumber: ibanNumber || null,
-        transferMode: 'SWIFT', // ✅ Always SWIFT for international
+        transferMode: 'SWIFT',
         status: 'pending',
         estimatedCompletion,
         notes: 'International transfer processing',
@@ -631,7 +642,6 @@ router.post('/transfer', async (req, res) => {
       return res.json({
         success: true,
         message: 'International transfer initiated successfully',
-        transferType: 'international',
         transferMode: 'SWIFT',
         senderBalance: sender.balance,
         transactionDetails: {
@@ -667,7 +677,6 @@ router.post('/transfer', async (req, res) => {
     }
   }
 });
-
 // Get transaction history
 router.get('/transactions', authMiddleware, async (req, res) => {
   console.log('📜 GET /api/add/transactions called');

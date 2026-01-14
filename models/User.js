@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 const transactionSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['local', 'international', 'add_funds', 'received', 'upi_transfer', 'card_payment'],
+    enum: ['transfer', 'add_funds', 'received', 'upi_transfer', 'card_payment'],
     required: true
   },
   amount: {
@@ -21,11 +21,15 @@ const transactionSchema = new mongoose.Schema({
   senderAccount: String,
   senderUPI: String,
   senderIFSC: String,
+  transferMode: {
+    type: String,
+    enum: ['IMPS', 'NEFT', 'SWIFT', 'UPI'],
+  },
   cardType: {
     type: String,
     enum: ['visa', 'mastercard'],
   },
-  cardLastFour: String, // Last 4 digits of card used
+  cardLastFour: String,
   status: {
     type: String,
     enum: ['completed', 'pending', 'failed'],
@@ -102,17 +106,16 @@ const userSchema = new mongoose.Schema(
     upiNumber: {
       type: String,
       unique: true,
-      sparse: true, // Allows multiple null values
+      sparse: true,
       trim: true,
     },
     ckycNumber: {
       type: String,
       unique: true,
-      sparse: true, // Allows multiple null values
+      sparse: true,
       trim: true,
       validate: {
         validator: function(v) {
-          // If ckycNumber is provided, it must be 14 digits
           return !v || /^\d{14}$/.test(v);
         },
         message: 'CKYC number must be 14 digits'
