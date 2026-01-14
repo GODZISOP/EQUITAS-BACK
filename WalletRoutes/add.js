@@ -12,12 +12,11 @@ console.log('✅ Wallet routes loaded');
 // Store OTPs temporarily (in production, use Redis)
 const otpStore = new Map();
 
-// Configure email transporter with safety checks
+// Configure email transporter
 let transporter = null;
 let emailEnabled = false;
 
 try {
-  // Check if email credentials exist
   if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
     transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -30,7 +29,6 @@ try {
       }
     });
 
-    // Verify email configuration
     transporter.verify((error, success) => {
       if (error) {
         console.error('❌ Email verification failed:', error.message);
@@ -43,7 +41,6 @@ try {
     });
   } else {
     console.log('⚠️ Email credentials not configured. OTP will work without email.');
-    console.log('   Add EMAIL_USER and EMAIL_PASSWORD to .env to enable emails');
   }
 } catch (error) {
   console.error('❌ Email setup error:', error.message);
@@ -55,7 +52,7 @@ const generateOTP = () => {
   return Math.floor(1000 + Math.random() * 9000).toString();
 };
 
-// Send OTP email (safe - won't crash if email fails)
+// Send OTP email
 const sendOTPEmail = async (email, otp, transactionType, amount) => {
   if (!transporter || !emailEnabled) {
     console.log('⚠️ Email not configured, skipping email send');
@@ -197,8 +194,7 @@ router.get('/balance', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Generate OTP for transaction
-// ✅ Generate OTP for transaction
+// Generate OTP for transaction
 router.post('/generate-otp', async (req, res) => {
   console.log('🔐 POST /api/add/generate-otp called');
   console.log('Request body:', req.body);
@@ -231,15 +227,14 @@ router.post('/generate-otp', async (req, res) => {
     console.log(`🔐 OTP Generated: ${otp}`);
     console.log(`   User: ${user.email || 'No email'}`);
     console.log(`   Transaction: ${transactionType}`);
-    console.log(`   Amount: ₹${amount}`);
+    console.log(`   Amount: د.إ${amount}`);
 
-    // Try to send email (optional - won't fail if email is not configured)
+    // Try to send email
     let emailSent = false;
     if (user.email && emailEnabled) {
       emailSent = await sendOTPEmail(user.email, otp, transactionType, amount);
     }
 
-    // ✅ FIXED: Don't send OTP in production
     res.json({
       success: true,
       message: emailSent 
@@ -247,8 +242,6 @@ router.post('/generate-otp', async (req, res) => {
         : 'OTP generated successfully',
       otpKey,
       email: user.email ? user.email.substring(0, 3) + '***' : undefined,
-      // ❌ REMOVE THIS LINE - Don't send OTP to frontend
-      // otp: otp, 
       expiresIn: 300
     });
 
@@ -262,7 +255,7 @@ router.post('/generate-otp', async (req, res) => {
   }
 });
 
-// ✅ Verify OTP
+// Verify OTP
 router.post('/verify-otp', async (req, res) => {
   console.log('✅ POST /api/add/verify-otp called');
   
@@ -282,7 +275,6 @@ router.post('/verify-otp', async (req, res) => {
       });
     }
 
-    // Check expiry
     if (Date.now() > otpData.expiresAt) {
       otpStore.delete(otpKey);
       return res.status(400).json({ 
@@ -291,7 +283,6 @@ router.post('/verify-otp', async (req, res) => {
       });
     }
 
-    // Verify OTP
     if (otpData.otp !== otp.toString()) {
       return res.status(400).json({ 
         message: 'Invalid OTP code',
@@ -313,8 +304,7 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
-// ✅ Add funds with OTP verification
-// ✅ Add funds with OTP verification (combined)
+// Add funds with OTP verification
 router.post('/add-funds', async (req, res) => {
   console.log('💰 POST /api/add/add-funds called');
   
@@ -341,7 +331,6 @@ router.post('/add-funds', async (req, res) => {
     
     if (!otpData) {
       console.log('❌ OTP key not found:', otpKey);
-      console.log('Available keys:', Array.from(otpStore.keys()));
       return res.status(401).json({ 
         message: 'OTP session expired. Please request a new OTP.',
         expired: true 
@@ -352,7 +341,6 @@ router.post('/add-funds', async (req, res) => {
       return res.status(401).json({ message: 'OTP verification failed' });
     }
 
-    // Check expiry
     if (Date.now() > otpData.expiresAt) {
       otpStore.delete(otpKey);
       return res.status(401).json({ 
@@ -361,7 +349,6 @@ router.post('/add-funds', async (req, res) => {
       });
     }
 
-    // Verify OTP code
     if (otpData.otp !== otp.toString()) {
       return res.status(401).json({ 
         message: 'Invalid OTP code',
@@ -369,7 +356,6 @@ router.post('/add-funds', async (req, res) => {
       });
     }
 
-    // OTP verified, delete it
     otpStore.delete(otpKey);
     console.log('✅ OTP verified successfully');
 
@@ -390,6 +376,7 @@ router.post('/add-funds', async (req, res) => {
       type: 'add_funds',
       amount: amountNum,
       status: 'completed',
+      transferMode: 'DEPOSIT', // ✅ Added
       notes: 'Funds added to account',
       createdAt: new Date()
     });
@@ -410,7 +397,7 @@ router.post('/add-funds', async (req, res) => {
       await session.abortTransaction();
     }
     console.error('Add funds error:', error);
-    res.status(500).json({ message: 'Server errorr', error: error.message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   } finally {
     if (session) {
       session.endSession();
@@ -418,10 +405,7 @@ router.post('/add-funds', async (req, res) => {
   }
 });
 
-// ✅ Transfer with OTP verification
-// Fix for the transfer endpoint in wallet.js
-
-// ✅ Transfer with OTP verification - FIXED VERSION
+// ✅ TRANSFER WITH IMPS/NEFT SUPPORT
 router.post('/transfer', async (req, res) => {
   let session = null;
   
@@ -431,22 +415,24 @@ router.post('/transfer', async (req, res) => {
       toAccountNumber, 
       amount,
       transferType = 'local',
+      transferMode = 'IMPS', // ✅ NEW: IMPS or NEFT
       recipientName,
       swiftCode,
       ibanNumber,
       otpKey,
-      otp  // ADD THIS - was missing!
+      otp
     } = req.body;
     
     const amountNum = Number(amount);
 
     console.log('💸 Transfer request:', {
       type: transferType,
+      mode: transferMode, // ✅ Log transfer mode
       from: fromUserId,
       to: toAccountNumber,
       amount: amountNum,
       otpKey: otpKey ? '✓' : '✗',
-      otp: otp ? '✓' : '✗'  // ADD THIS
+      otp: otp ? '✓' : '✗'
     });
 
     // Validation
@@ -457,7 +443,7 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
-    if (!otpKey || !otp) {  // FIXED: Check for both otpKey AND otp
+    if (!otpKey || !otp) {
       return res.status(400).json({ 
         success: false,
         message: 'OTP verification required' 
@@ -478,12 +464,11 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
-    // FIXED: Verify OTP properly
+    // Verify OTP
     const otpData = otpStore.get(otpKey);
     
     if (!otpData) {
       console.log('❌ OTP key not found:', otpKey);
-      console.log('Available OTP keys:', Array.from(otpStore.keys()));
       return res.status(401).json({ 
         success: false,
         message: 'OTP session expired. Please request a new OTP.',
@@ -498,7 +483,6 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
-    // Check expiry
     if (Date.now() > otpData.expiresAt) {
       otpStore.delete(otpKey);
       return res.status(401).json({ 
@@ -508,7 +492,6 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
-    // FIXED: Verify OTP code
     if (otpData.otp !== otp.toString()) {
       console.log('❌ OTP mismatch:', { expected: otpData.otp, received: otp });
       return res.status(401).json({ 
@@ -519,8 +502,6 @@ router.post('/transfer', async (req, res) => {
     }
 
     console.log('✅ OTP verified successfully');
-    
-    // Delete OTP after successful verification
     otpStore.delete(otpKey);
 
     if (transferType === 'international' && !swiftCode?.trim()) {
@@ -552,6 +533,7 @@ router.post('/transfer', async (req, res) => {
       });
     }
 
+    // ✅ LOCAL TRANSFER WITH IMPS/NEFT
     if (transferType === 'local') {
       const recipient = await User.findOne({ accountNumber: toAccountNumber }).session(session);
       
@@ -580,6 +562,7 @@ router.post('/transfer', async (req, res) => {
         amount: -amountNum,
         recipientName,
         recipientAccount: toAccountNumber,
+        transferMode: transferMode, // ✅ Save IMPS or NEFT
         status: 'completed',
         createdAt: new Date()
       });
@@ -590,6 +573,7 @@ router.post('/transfer', async (req, res) => {
         amount: amountNum,
         senderName: sender.email,
         senderAccount: sender.accountNumber,
+        transferMode: transferMode, // ✅ Save IMPS or NEFT
         status: 'completed',
         createdAt: new Date()
       });
@@ -598,25 +582,27 @@ router.post('/transfer', async (req, res) => {
       await recipient.save({ session });
       await session.commitTransaction();
 
-      console.log(`✅ Local Transfer: د.إ${amountNum}`);
+      console.log(`✅ ${transferMode} Transfer: د.إ${amountNum}`);
 
       return res.json({
         success: true,
         message: 'Transfer successful',
         transferType: 'local',
+        transferMode: transferMode, // ✅ Return transfer mode
         senderBalance: sender.balance,
         transactionDetails: {
           from: sender.accountNumber,
           to: recipient.accountNumber,
           recipientName,
           amount: amountNum,
+          transferMode: transferMode,
           status: 'completed',
           timestamp: new Date().toISOString()
         }
       });
 
     } else {
-      // International transfer
+      // ✅ INTERNATIONAL TRANSFER
       const estimatedCompletion = new Date();
       estimatedCompletion.setDate(estimatedCompletion.getDate() + 2);
 
@@ -630,6 +616,7 @@ router.post('/transfer', async (req, res) => {
         recipientAccount: toAccountNumber,
         swiftCode,
         ibanNumber: ibanNumber || null,
+        transferMode: 'SWIFT', // ✅ Always SWIFT for international
         status: 'pending',
         estimatedCompletion,
         notes: 'International transfer processing',
@@ -639,12 +626,13 @@ router.post('/transfer', async (req, res) => {
       await sender.save({ session });
       await session.commitTransaction();
 
-      console.log(`✅ International Transfer: د.إ${amountNum}`);
+      console.log(`✅ SWIFT Transfer: د.إ${amountNum}`);
 
       return res.json({
         success: true,
         message: 'International transfer initiated successfully',
         transferType: 'international',
+        transferMode: 'SWIFT',
         senderBalance: sender.balance,
         transactionDetails: {
           from: sender.accountNumber,
@@ -653,6 +641,7 @@ router.post('/transfer', async (req, res) => {
           amount: amountNum,
           swiftCode,
           ibanNumber: ibanNumber || null,
+          transferMode: 'SWIFT',
           status: 'pending',
           estimatedCompletion: estimatedCompletion.toISOString(),
           timestamp: new Date().toISOString()
@@ -665,7 +654,7 @@ router.post('/transfer', async (req, res) => {
       await session.abortTransaction();
     }
     console.error('❌ Transfer error:', error);
-    console.error('Error stack:', error.stack);  // ADD THIS for better debugging
+    console.error('Error stack:', error.stack);
     res.status(500).json({ 
       success: false,
       message: 'Server error', 
@@ -704,19 +693,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
   }
 });
 
-// Clean up expired OTPs
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of otpStore.entries()) {
-    if (now > value.expiresAt) {
-      otpStore.delete(key);
-      console.log(`🗑️ Expired OTP cleaned: ${key}`);
-    }
-  }
-}, 60000);
-
-
-
+// ✅ UPI DEDUCT BALANCE
 router.post('/deduct-balance', async (req, res) => {
   console.log('💸 POST /api/user/deduct-balance called');
   
@@ -741,7 +718,6 @@ router.post('/deduct-balance', async (req, res) => {
       txnId: transactionId
     });
 
-    // Validation
     if (!userId) {
       return res.status(400).json({ 
         success: false,
@@ -763,7 +739,6 @@ router.post('/deduct-balance', async (req, res) => {
       });
     }
 
-    // Start transaction
     session = await mongoose.startSession();
     session.startTransaction();
 
@@ -777,7 +752,6 @@ router.post('/deduct-balance', async (req, res) => {
       });
     }
 
-    // Check sufficient balance
     if ((user.balance || 0) < amountNum) {
       await session.abortTransaction();
       return res.status(400).json({ 
@@ -788,10 +762,8 @@ router.post('/deduct-balance', async (req, res) => {
       });
     }
 
-    // Deduct balance
     user.balance = (user.balance || 0) - amountNum;
 
-    // Add transaction to user's history
     user.transactions = user.transactions || [];
     user.transactions.push({
       type: 'upi_transfer',
@@ -799,6 +771,7 @@ router.post('/deduct-balance', async (req, res) => {
       transactionId: transactionId,
       toUPI: toUPI,
       fromUPI: fromUPI,
+      transferMode: 'UPI', // ✅ Added
       status: 'completed',
       notes: `UPI transfer to ${toUPI}`,
       createdAt: new Date()
@@ -807,7 +780,7 @@ router.post('/deduct-balance', async (req, res) => {
     await user.save({ session });
     await session.commitTransaction();
 
-    console.log(`✅ Balance deducted: ₹${amountNum}. New balance: ₹${user.balance}`);
+    console.log(`✅ Balance deducted: د.إ${amountNum}. New balance: د.إ${user.balance}`);
 
     res.json({
       success: true,
@@ -833,5 +806,15 @@ router.post('/deduct-balance', async (req, res) => {
   }
 });
 
+// Clean up expired OTPs
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of otpStore.entries()) {
+    if (now > value.expiresAt) {
+      otpStore.delete(key);
+      console.log(`🗑️ Expired OTP cleaned: ${key}`);
+    }
+  }
+}, 60000);
 
 export default router;
