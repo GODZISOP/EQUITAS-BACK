@@ -437,7 +437,7 @@ router.post('/transfer', async (req, res) => {
     if (!fromUserId || !toAccountNumber || !amountNum) {
       return res.status(400).json({ 
         success: false,
-        message: 'All fields are required' 
+        message: 'All fields are requireds' 
       });
     }
 
